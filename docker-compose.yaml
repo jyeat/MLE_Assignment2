@@ -52,6 +52,8 @@ services:
       - ./utils:/opt/airflow/utils
       - ./datamart:/app/datamart
       - ./data:/app/data
+      - ./models:/app/models
+      - ./predictions:/app/predictions
     ports:
       - "8080:8080"
     command: airflow webserver
@@ -73,6 +75,8 @@ services:
       - ./utils:/opt/airflow/utils
       - ./datamart:/app/datamart
       - ./data:/app/data
+      - ./models:/app/models
+      - ./predictions:/app/predictions
     command: airflow scheduler
 
 volumes:

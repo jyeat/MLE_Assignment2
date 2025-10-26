@@ -311,7 +311,7 @@ def predict_credit_default(config):
     )
 
     if len(X_df) == 0:
-        print(f"\n   WARNING: No features found for date {config['inference_date']}")
+        print(f"\nWARNING: No features found for date {config['inference_date']}")
         print("Please check if the date exists in feature_store")
         spark.stop()
         return None
