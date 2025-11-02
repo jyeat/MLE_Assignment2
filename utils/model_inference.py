@@ -267,6 +267,58 @@ def save_predictions(df_predictions, output_dir='predictions'):
     return filepath
 
 
+def save_predictions_to_gold(df_predictions, gold_db, spark):
+    """
+    Save predictions to gold layer as parquet (following feature_store pattern)
+
+    Args:
+        df_predictions: DataFrame with predictions (pandas)
+        gold_db: Path to gold database directory
+        spark: Spark session
+
+    Returns:
+        Path to saved parquet file
+    """
+    from pyspark.sql.types import StructType, StructField, StringType, IntegerType, FloatType
+
+    print(f"\n💾 Saving predictions to gold layer...")
+
+    # Create prediction_store directory
+    prediction_store_dir = os.path.join(gold_db, 'prediction_store')
+    os.makedirs(prediction_store_dir, exist_ok=True)
+
+    # Get inference date for partitioning
+    inference_date = df_predictions['inference_date'].iloc[0]
+    date_str = inference_date.replace('-', '_')
+    filename = f'gold_prediction_store_{date_str}.parquet'
+    filepath = os.path.join(prediction_store_dir, filename)
+
+    # Define schema
+    schema = StructType([
+        StructField('Customer_ID', StringType(), True),
+        StructField('inference_date', StringType(), True),
+        StructField('predicted_default', IntegerType(), True),
+        StructField('default_probability', FloatType(), True),
+        StructField('risk_category', StringType(), True)
+    ])
+
+    # Convert to Spark DataFrame and save
+    spark_df = spark.createDataFrame(df_predictions, schema=schema)
+    spark_df.write.mode('overwrite').parquet(filepath)
+
+    print(f"✅ Predictions saved to gold table: {filepath}")
+    print(f"   Format: Parquet")
+    print(f"   Rows: {len(df_predictions):,}")
+
+    # Summary statistics
+    print(f"\n📊 Risk Distribution:")
+    for risk, count in df_predictions['risk_category'].value_counts().items():
+        pct = count / len(df_predictions) * 100
+        print(f"   {risk:15s}: {count:5,} ({pct:5.1f}%)")
+
+    return filepath
+
+
 ##########################
 # MAIN FUNCTION
 ##########################
@@ -337,18 +389,27 @@ def predict_credit_default(config):
         config['inference_date']
     )
 
-    # Save predictions
-    print("\n6. Saving predictions...")
-    output_path = save_predictions(
+    # Save predictions to gold layer (Parquet)
+    print("\n6. Saving predictions to gold layer...")
+    gold_output_path = save_predictions_to_gold(
         df_predictions,
-        output_dir=config.get('output_dir', 'predictions')
+        config['gold_db'],
+        spark
     )
+
+    # Optional: Also save as CSV for convenience
+    if config.get('save_csv', False):
+        csv_output_path = save_predictions(
+            df_predictions,
+            output_dir=config.get('output_dir', 'predictions')
+        )
+        print(f"\n📄 CSV backup saved: {csv_output_path}")
 
     print("\n" + "="*80)
     print("INFERENCE COMPLETE!")
     print("="*80)
     print(f"Scored {len(df_predictions):,} customers")
-    print(f"Output: {output_path}")
+    print(f"Gold Table: {gold_output_path}")
 
     spark.stop()
 

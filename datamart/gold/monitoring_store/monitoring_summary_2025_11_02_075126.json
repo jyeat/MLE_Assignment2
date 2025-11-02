@@ -1,0 +1,90 @@
+{
+  "timestamp": "2025-11-02T07:51:43.742122",
+  "psi_summary": {
+    "avg_psi": 0.21858180326056662,
+    "max_psi": 0.5217145155865466,
+    "min_psi": 0.0426924902737158,
+    "max_psi_date": "2024-09-01 00:00:00",
+    "min_psi_date": "2024-02-01 00:00:00",
+    "n_stable": 6,
+    "n_moderate": 0,
+    "n_significant": 7
+  },
+  "performance_summary": {
+    "evaluation_available": true,
+    "evaluation_period": {
+      "start": "2023-12-01 00:00:00",
+      "end": "2024-07-01 00:00:00"
+    },
+    "total_samples_evaluated": 4010,
+    "avg_metrics": {
+      "auc": 0.8245352970725223,
+      "accuracy": 0.7840026032110878,
+      "precision": 0.6281396140793631,
+      "recall": 0.7036463380098185,
+      "f1_score": 0.6630687582086539
+    },
+    "metric_ranges": {
+      "auc_min": 0.7847272313124027,
+      "auc_max": 0.9384576198126886
+    },
+    "business_metrics": {
+      "avg_actual_default_rate": 0.30208658666108107,
+      "avg_predicted_default_rate": 0.33927966810317145,
+      "avg_false_negative_rate": 0.29635366199018154,
+      "avg_false_positive_rate": 0.18103966689087897
+    },
+    "training_comparison": {
+      "training_test_auc": 0.7993146147574399,
+      "production_avg_auc": 0.8245352970725223,
+      "auc_difference": 0.025220682315082343,
+      "performance_status": "better"
+    }
+  },
+  "feature_drift_summary": {
+    "n_features_monitored": 8,
+    "avg_feature_psi": 0.010291446906529089,
+    "top_drifting_features": {
+      "Debt_to_income_ratio": 0.03340205832249841,
+      "Changed_Credit_Limit": 0.027064096975485206,
+      "Num_of_Delayed_Payment": 0.005308111358891491,
+      "Num_Credit_Card": 0.005135693848562876,
+      "Num_Credit_Inquiries": 0.003753049525699348
+    },
+    "features_high_drift": [],
+    "n_features_high_drift": 0
+  },
+  "data_quality_summary": {
+    "avg_missing_rate_pct": 4.124989168679053,
+    "max_missing_rate_pct": 20.411051212938006,
+    "max_missing_rate_date": "2023-01-01 00:00:00",
+    "avg_rows_per_month": 500.0,
+    "total_duplicates": 0
+  },
+  "alerts": [
+    {
+      "severity": "critical",
+      "category": "population_drift",
+      "message": "Significant population drift detected in 7 periods (PSI >= 0.2)",
+      "recommendation": "Model retraining strongly recommended",
+      "metrics": {
+        "max_psi": 0.5217145155865466,
+        "avg_psi": 0.21858180326056662
+      }
+    },
+    {
+      "severity": "warning",
+      "category": "data_quality",
+      "message": "Missing value rate exceeds 5.0% (max: 20.41%)",
+      "recommendation": "Review data pipeline and investigate missing data sources"
+    }
+  ],
+  "recommendations": [
+    "URGENT: 1 critical issue(s) detected - immediate action required",
+    "Model retraining strongly recommended",
+    "Review data pipeline and investigate missing data sources",
+    "Continue monitoring model performance monthly",
+    "Set up automated alerts for PSI > 0.2 or feature drift > 0.2",
+    "Schedule quarterly model performance reviews"
+  ]
+}

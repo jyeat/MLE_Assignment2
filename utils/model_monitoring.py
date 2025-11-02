@@ -277,6 +277,9 @@ def evaluate_model_performance(
         df_labels_for_merge = df_labels[['Customer_ID', 'label', 'label_def', 'snapshot_date']].copy()
         df_labels_for_merge = df_labels_for_merge.rename(columns={'snapshot_date': 'label_date'})
 
+        # Use the predictions_df parameter that was already passed in
+        # (predictions are already loaded from gold table in main function)
+
         # Merge predictions with labels
         df_eval = predictions_df.merge(df_labels_for_merge, on='Customer_ID', how='inner')
 
@@ -1211,13 +1214,27 @@ def run_model_monitoring(config: Dict) -> Dict:
         feature_importance = pd.read_csv(f"{model_dir}/feature_importance.csv")
         print(f"   Model trained on: {metadata['training_date']}")
 
-        # 2. Load predictions
-        print("\n2. Loading predictions...")
-        predictions_files = sorted(glob.glob(f"{config['predictions_dir']}/predictions_*.csv"))
-        predictions_list = [pd.read_csv(f) for f in predictions_files]
-        all_predictions = pd.concat(predictions_list, ignore_index=True)
+        # 2. Load predictions from gold table
+        print("\n2. Loading predictions from gold table...")
+
+        # Read from gold prediction_store
+        prediction_store_path = os.path.join(config.get('gold_db', 'datamart/gold'), 'prediction_store')
+        print(f"   Reading from: {prediction_store_path}")
+
+        if not os.path.exists(prediction_store_path):
+            raise FileNotFoundError(f"Prediction store not found at {prediction_store_path}")
+
+        prediction_files = glob.glob(f"{prediction_store_path}/*.parquet")
+
+        if not prediction_files:
+            raise FileNotFoundError(f"No parquet files found in {prediction_store_path}")
+
+        # Read all parquet files using Spark (spark already initialized above)
+        predictions_spark = spark.read.parquet(*prediction_files)
+        all_predictions = predictions_spark.toPandas()
+
         all_predictions['inference_date'] = pd.to_datetime(all_predictions['inference_date'])
-        print(f"   Total predictions: {len(all_predictions):,}")
+        print(f"   ✅ Loaded {len(all_predictions):,} predictions from gold table (Parquet)")
         print(f"   Date range: {all_predictions['inference_date'].min().date()} to {all_predictions['inference_date'].max().date()}")
 
         # 3. Calculate PSI
@@ -1275,54 +1292,44 @@ def run_model_monitoring(config: Dict) -> Dict:
         print(f"   Alerts generated: {len(alerts)}")
         print(f"   Critical alerts: {len([a for a in alerts if a['severity'] == 'critical'])}")
 
-        # 8. Generate visualizations
-        print("\n8. Generating visualizations...")
-        output_dir = config['output_dir']
-        os.makedirs(output_dir, exist_ok=True)
+        # 8. Save monitoring results to gold table FIRST (before visualization)
+        print("\n8. Saving monitoring results to gold layer...")
 
-        visualization_paths = generate_monitoring_visualizations(
-            psi_df=psi_df,
-            performance_df=performance_df,
-            feature_drift_df=feature_drift_df,
-            data_quality_df=data_quality_df,
-            all_predictions=all_predictions,
-            output_dir=output_dir,
-            metadata=metadata
-        )
-        print(f"   Generated {len(visualization_paths)} visualizations")
-        for viz_type, path in visualization_paths.items():
-            print(f"     - {viz_type}: {os.path.basename(path)}")
+        # Get gold database path
+        gold_db = config.get('gold_db', 'datamart/gold')
+        monitoring_store_dir = os.path.join(gold_db, 'monitoring_store')
+        os.makedirs(monitoring_store_dir, exist_ok=True)
 
+        # Create timestamp for this monitoring run
+        timestamp = datetime.now().strftime('%Y_%m_%d_%H%M%S')
 
-        # 8. Generate visualizations
-        print("\n8. Generating visualizations...")
-        output_dir = config['output_dir']
-        os.makedirs(output_dir, exist_ok=True)
+        # Save PSI results to gold table (Parquet)
+        psi_file = f"psi_results_{timestamp}.parquet"
+        psi_spark = spark.createDataFrame(psi_df)
+        psi_spark.write.mode('overwrite').parquet(os.path.join(monitoring_store_dir, psi_file))
+        print(f"   ✅ PSI results: {psi_file}")
 
-        visualization_paths = generate_monitoring_visualizations(
-            psi_df=psi_df,
-            performance_df=performance_df,
-            feature_drift_df=feature_drift_df,
-            data_quality_df=data_quality_df,
-            all_predictions=all_predictions,
-            output_dir=output_dir,
-            metadata=metadata
-        )
-        print(f"   Generated {len(visualization_paths)} visualizations")
-        for viz_type, path in visualization_paths.items():
-            print(f"     - {viz_type}: {os.path.basename(path)}")
-
-        # 9. Save results
-        print("\n9. Saving monitoring results...")
-
-        psi_df.to_csv(f"{output_dir}/psi_results.csv", index=False)
+        # Save feature drift results to gold table (Parquet)
         if len(feature_drift_df) > 0:
-            feature_drift_df.to_csv(f"{output_dir}/feature_drift_results.csv", index=False)
-        if len(performance_df) > 0:
-            performance_df.to_csv(f"{output_dir}/performance_metrics.csv", index=False)
-        data_quality_df.to_csv(f"{output_dir}/data_quality_metrics.csv", index=False)
+            drift_file = f"feature_drift_{timestamp}.parquet"
+            drift_spark = spark.createDataFrame(feature_drift_df)
+            drift_spark.write.mode('overwrite').parquet(os.path.join(monitoring_store_dir, drift_file))
+            print(f"   ✅ Feature drift: {drift_file}")
 
-        # Save summary report
+        # Save performance metrics to gold table (Parquet)
+        if len(performance_df) > 0:
+            perf_file = f"performance_metrics_{timestamp}.parquet"
+            perf_spark = spark.createDataFrame(performance_df)
+            perf_spark.write.mode('overwrite').parquet(os.path.join(monitoring_store_dir, perf_file))
+            print(f"   ✅ Performance metrics: {perf_file}")
+
+        # Save data quality to gold table (Parquet)
+        quality_file = f"data_quality_{timestamp}.parquet"
+        quality_spark = spark.createDataFrame(data_quality_df)
+        quality_spark.write.mode('overwrite').parquet(os.path.join(monitoring_store_dir, quality_file))
+        print(f"   ✅ Data quality: {quality_file}")
+
+        # Save summary report as JSON to gold table
         summary_report = {
             'timestamp': datetime.now().isoformat(),
             'psi_summary': psi_summary,
@@ -1334,26 +1341,24 @@ def run_model_monitoring(config: Dict) -> Dict:
         }
 
         import json
-        with open(f"{output_dir}/monitoring_summary.json", 'w') as f:
+        summary_file = f"monitoring_summary_{timestamp}.json"
+        with open(os.path.join(monitoring_store_dir, summary_file), 'w') as f:
             json.dump(summary_report, f, indent=2, default=str)
+        print(f"   ✅ Summary report: {summary_file}")
 
-        # Generate HTML report
-        print("\n   Generating HTML report...")
-        html_report_path = generate_html_report(
-            summary_report=summary_report,
-            visualization_paths=visualization_paths,
-            output_dir=output_dir
-        )
-        print(f"   HTML report: {os.path.basename(html_report_path)}")
-
-
-        print(f"   Results saved to: {output_dir}")
+        print(f"   📁 All monitoring data saved to: {monitoring_store_dir}")
 
         print("\n" + "="*80)
-        print("MODEL MONITORING COMPLETE")
+        print("MODEL MONITORING CALCULATIONS COMPLETE")
+        print("Monitoring results saved to gold table.")
+        print("Next: Run visualization task to generate charts and HTML report.")
         print("="*80)
 
-        return summary_report
+        return {
+            'summary_report': summary_report,
+            'timestamp': timestamp,
+            'monitoring_store_dir': monitoring_store_dir
+        }
 
     finally:
         spark.stop()
